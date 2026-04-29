@@ -1,0 +1,9 @@
+# Copy this file to terraform.tfvars and fill your values.
+
+databricks_host = "https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
+databricks_token = "<DATABRICKS_PAT>"
+
+workspace_root = "/Shared/databricks-aws-demos"
+# project_root can stay default when running terraform from this folder.
+# project_root = "../.."
+
