@@ -12,9 +12,10 @@ This repository contains a collection of demos illustrating the integration of D
 4. [Data Serving/Consumption](#data-serving)
 5. [Prerequisites](#prerequisites)
 6. [Setup and Running Demos](#setup)
-7. [Contributing](#contributing)
-8. [License](#license)
-9. [Contact](#contact)
+7. [Run and Debug Guide](RUN_AND_DEBUG.md)
+8. [Contributing](#contributing)
+9. [License](#license)
+10. [Contact](#contact)
 
 <a name="databricks-intro"></a>
 ## Databricks Intro
@@ -58,6 +59,7 @@ To run these demos, you will need:
 1. Clone this repository to your local machine.
 2. Set up your AWS and Databricks credentials.
 3. Follow the individual READMEs in each demo's folder to set up and run the demos.
+4. For local testing, PyCharm debugging, and Terraform deployment steps, see [Run and Debug Guide](RUN_AND_DEBUG.md).
 
 <a name="contributing"></a>
 ## Contributing
