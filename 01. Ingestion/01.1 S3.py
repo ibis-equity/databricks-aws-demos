@@ -1,4 +1,6 @@
 # Databricks notebook source
+# noinspection PyUnresolvedReferences
+# noinspection PyTypeChecker
 # MAGIC %md
 # MAGIC # Lab 1 Overview:
 # MAGIC
@@ -13,10 +15,33 @@
 # MAGIC - **Ingestion using Spark APIs**: This will include options like using Spark's DataFrameReader API to load data directly from S3 into Databricks.
 # MAGIC
 # MAGIC - **Ingestion using Databricks Delta Lake**: Delta Lake allows us to make our data lake reliable with ACID transactions, and it also has inbuilt functionality to read data from S3.
+# Import typing helpers used to describe Databricks runtime objects for static analysis.
+from typing import Any, Protocol, cast
+
+
+# Define the minimal dbutils interface this notebook relies on.
+class _DbutilsLike(Protocol):
+    widgets: Any
+    fs: Any
+
+
+# Define the minimal SparkSession interface used in this notebook.
+class _SparkLike(Protocol):
+    conf: Any
+    read: Any
+    readStream: Any
+
+
+# Resolve dbutils from the notebook global scope and cast for better IDE hints.
+dbutils = cast(_DbutilsLike, globals().get("dbutils"))
+# Resolve display helper from globals; fallback avoids crashes outside Databricks.
+display: Any = globals().get("display", lambda *_args, **_kwargs: None)
+# Resolve SparkSession from globals and cast to the minimal protocol.
+spark = cast(_SparkLike, globals().get("spark"))
 
 # COMMAND ----------
 
-#To reset the data and restart the demo from scratch, switch the widget to True and run the "%run ./_resources/00-setup $reset_all_data=$reset_all_data" cell below.
+# Create a UI widget so users can choose whether to reset demo data.
 dbutils.widgets.dropdown("reset_all_data", "false", ["true", "false"], "Reset all data")
 
 # COMMAND ----------
@@ -26,6 +51,24 @@ dbutils.widgets.dropdown("reset_all_data", "false", ["true", "false"], "Reset al
 # COMMAND ----------
 
 # MAGIC %run ../_resources/00-basedata $reset_all_data=$reset_all_data
+
+# Databricks `%run` injects these names at runtime; alias them for IDE/static analysis.
+# Refresh dbutils reference from globals after setup notebooks have executed.
+dbutils = globals().get("dbutils", dbutils)
+# Refresh display helper from globals after setup notebooks have executed.
+display = globals().get("display", display)
+# Refresh SparkSession reference from globals after setup notebooks have executed.
+spark = globals().get("spark", spark)
+# Load the cloud storage root path produced by setup notebooks.
+cloud_storage_path: str = globals().get("cloud_storage_path", "")
+# Load data generation helper or fallback to identity outside Databricks setup.
+add_data: Any = globals().get("add_data", lambda x: x)
+# Load SNS-file movement helper or fallback to identity outside setup.
+move_file_sns: Any = globals().get("move_file_sns", lambda x: x)
+# Track current synthetic file counter for regular ingest path.
+file_counter: int = globals().get("file_counter", 0)
+# Track current synthetic file counter for SNS ingest path.
+file_counter_sns: int = globals().get("file_counter_sns", 0)
 
 # COMMAND ----------
 
@@ -49,12 +92,13 @@ dbutils.widgets.dropdown("reset_all_data", "false", ["true", "false"], "Reset al
 # Example
 # dbutils.fs.ls({path})
 
-display(dbutils.fs.ls(cloud_storage_path+"/ingest"))
+# List current ingest files in cloud storage for quick exploration.
+display(dbutils.fs.ls(cloud_storage_path + "/ingest"))
 
 # COMMAND ----------
 
-#You can also use dbutils.fs.head to display the beginning of a file:
-print(dbutils.fs.head(cloud_storage_path+"/csv/departuredelays.csv"))
+# Print the first bytes/lines of a CSV file to inspect raw contents.
+print(dbutils.fs.head(cloud_storage_path + "/csv/departuredelays.csv"))
 
 # COMMAND ----------
 
@@ -75,9 +119,12 @@ print(dbutils.fs.head(cloud_storage_path+"/csv/departuredelays.csv"))
 
 # COMMAND ----------
 
-df = spark.read.format("json").load(cloud_storage_path+"/ingest")
+# Read all JSON files from the ingest folder into a Spark DataFrame.
+df = spark.read.format("json").load(cloud_storage_path + "/ingest")
 
+# Render the DataFrame in the Databricks notebook output.
 df.display()
+# Trigger a full count action to measure dataset size.
 df.count()
 
 # COMMAND ----------
@@ -101,13 +148,15 @@ df.count()
 # COMMAND ----------
 
 # DBTITLE 1,(python) Read specific file into Dataframe
-#The below code uses an path directly to the file
+# Print the resolved cloud storage base path used by this lab.
 print(cloud_storage_path)
-df = spark.read.format("json").load(cloud_storage_path+"/ingest/part-00001.json.gz")
+# Read a specific JSON file to demonstrate direct file-path ingestion.
+df = spark.read.format("json").load(cloud_storage_path + "/ingest/part-00001.json.gz")
 
+# Render rows from the selected file.
 df.display()
+# Count rows from the selected file.
 df.count()
-
 
 # COMMAND ----------
 
@@ -139,7 +188,9 @@ df.count()
 
 # DBTITLE 1,(python) Read specific file into Dataframe and add MetaData
 
-df = spark.read.format("json").load(cloud_storage_path+"/ingest/part-00001.json.gz").select("*", "_metadata")
+# Read one JSON file and append Databricks file metadata columns.
+df = spark.read.format("json").load(cloud_storage_path + "/ingest/part-00001.json.gz").select("*", "_metadata")
+# Display data with metadata for lineage/reconciliation examples.
 df.display()
 
 # COMMAND ----------
@@ -166,7 +217,9 @@ df.display()
 
 # COMMAND ----------
 
-df = spark.read.format("json").load(dbutils.fs.ls(cloud_storage_path+"/ingest")[0][0]).select("*", "_metadata")
+# Read the first file discovered in ingest and include metadata columns.
+df = spark.read.format("json").load(dbutils.fs.ls(cloud_storage_path + "/ingest")[0][0]).select("*", "_metadata")
+# Register a temp view so SQL cells can query the loaded DataFrame.
 df.createOrReplaceTempView('vw_json_files')
 
 # COMMAND ----------
@@ -183,6 +236,7 @@ df.createOrReplaceTempView('vw_json_files')
 # COMMAND ----------
 
 # DBTITLE 1,(sql) Query the Temporary View
+# Query a small sample from the temporary JSON view for validation.
 # MAGIC %sql
 # MAGIC SELECT * FROM vw_json_files LIMIT 10
 
@@ -200,11 +254,13 @@ df.createOrReplaceTempView('vw_json_files')
 # COMMAND ----------
 
 # DBTITLE 1,(sql) Read all files
+# Read all JSON records directly from the ingest path using Spark SQL.
 # MAGIC %sql
 # MAGIC SELECT * FROM json.`${da.cloud_storage_path}/ingest`
 
 # COMMAND ----------
 
+# Read all files via Databricks read_files helper for comparison.
 # MAGIC %sql
 # MAGIC SELECT * FROM read_files('${da.cloud_storage_path}/ingest')
 
@@ -222,11 +278,13 @@ df.createOrReplaceTempView('vw_json_files')
 # COMMAND ----------
 
 # DBTITLE 1,(sql) Create a Delta Table from Files
+# Materialize JSON source files into a managed Delta table.
 # MAGIC %sql
 # MAGIC CREATE OR REPLACE TABLE `iot_data` AS SELECT * FROM json.`${da.cloud_storage_path}/ingest`
 
 # COMMAND ----------
 
+# Run a simple aggregation to verify table contents.
 # MAGIC %sql
 # MAGIC SELECT SUM(calories_burnt) FROM iot_data
 
@@ -285,18 +343,21 @@ df.createOrReplaceTempView('vw_json_files')
 # COMMAND ----------
 
 # DBTITLE 1,(python) Use Autoloader to Read Cloud Files as a Stream
+# Define where Auto Loader stores inferred/evolved schema information.
 schema_location = cloud_storage_path + "/ingest/schema"
 
-bronzeDF = (spark.readStream \
-                .format("cloudFiles")
-                .option("cloudFiles.format", "json")
-                .option("cloudFiles.maxFilesPerTrigger", 1)  #demo only, remove in real stream. Default is 1000
-                .option("cloudFiles.schemaLocation", schema_location)
-                .option("rescuedDataColumn", "_rescue") # data that does not match schema is placed in _rescue column
-                #.schema("address string") # you can provide schema hints
-                .load(cloud_storage_path+"/ingest")
-                .select("*", "_metadata")) # add metadata to bronze so we know the source files etc
-
+# Configure Auto Loader to read JSON files as a streaming source.
+bronzeDF = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.maxFilesPerTrigger", 1)  #demo only, remove in real stream. Default is 1000
+    .option("cloudFiles.schemaLocation", schema_location)
+    .option("rescuedDataColumn", "_rescue")  # data that does not match schema is placed in _rescue column
+    #.schema("address string") # you can provide schema hints
+    .load(cloud_storage_path + "/ingest")
+    .select("*", "_metadata")
+)  # add metadata to bronze so we know the source files etc
 
 # COMMAND ----------
 
@@ -318,15 +379,17 @@ bronzeDF = (spark.readStream \
 # COMMAND ----------
 
 # DBTITLE 1,(python) Use WriteStream to create our Delta Table
+# Write the Auto Loader stream into a Delta table with checkpointing.
 bronzeDF.writeStream \
-                .format("delta") \
-                .option("checkpointLocation", cloud_storage_path+"/bronze/bronze_iot_stream/checkpoint") \
-                .trigger(once=True) \
-                .option("mergeSchema", "true") \
-                .table("iot_autoloader_demo") # table name
+    .format("delta") \
+    .option("checkpointLocation", cloud_storage_path + "/bronze/bronze_iot_stream/checkpoint") \
+    .trigger(once=True) \
+    .option("mergeSchema", "true") \
+    .table("iot_autoloader_demo")  # table name
 
 # COMMAND ----------
 
+# Preview ingested records in the Auto Loader Delta target table.
 # MAGIC %sql
 # MAGIC SELECT * FROM iot_autoloader_demo
 
@@ -344,6 +407,7 @@ bronzeDF.writeStream \
 # COMMAND ----------
 
 # DBTITLE 1,Check Files State in the CheckPoint
+# Inspect Auto Loader checkpoint state to track processed files.
 # MAGIC %sql
 # MAGIC SELECT * FROM cloud_files_state("${da.cloud_storage_path}/bronze/bronze_iot_stream/checkpoint");
 
@@ -360,6 +424,7 @@ bronzeDF.writeStream \
 
 # COMMAND ----------
 
+# Review distinct metadata values captured during ingestion.
 # MAGIC %sql
 # MAGIC SELECT DISTINCT _metadata FROM iot_autoloader_demo
 
@@ -376,15 +441,16 @@ bronzeDF.writeStream \
 
 # COMMAND ----------
 
+# Show Delta transaction history for auditing and troubleshooting.
 # MAGIC %sql
 # MAGIC DESCRIBE HISTORY iot_autoloader_demo 
 
 # COMMAND ----------
 
 # DBTITLE 1,Add more Data
+# Generate additional source files and persist the updated file counter.
 file_counter = add_data(file_counter)
 
-#Go To CMD #13 to rerun AutoLoader
 
 # COMMAND ----------
 
@@ -400,6 +466,7 @@ file_counter = add_data(file_counter)
 # COMMAND ----------
 
 # DBTITLE 1,Optimize table
+# Compact small files to improve Delta read performance.
 # MAGIC %sql
 # MAGIC OPTIMIZE iot_autoloader_demo
 
@@ -417,6 +484,7 @@ file_counter = add_data(file_counter)
 # COMMAND ----------
 
 # DBTITLE 1,Analyse table 
+# Compute table statistics so the optimizer can choose better plans.
 # MAGIC %sql
 # MAGIC ANALYZE TABLE iot_autoloader_demo COMPUTE STATISTICS 
 
@@ -437,6 +505,7 @@ file_counter = add_data(file_counter)
 
 # COMMAND ----------
 
+# Configure Auto Loader in notification mode for high-volume ingest scenarios.
 bronzeDF = (
     spark.readStream.format("cloudFiles")
     .option("cloudFiles.format", "json")
@@ -446,21 +515,23 @@ bronzeDF = (
     .option(
         "cloudFiles.backfillInterval", "1 week"
     )  # Auto Loader can trigger asynchronous backfills at a given interval, e.g. 1 day to backfill once a day, or 1 week
-    .load(cloud_storage_path+"/ingest_sns")
+    .load(cloud_storage_path + "/ingest_sns")
 )
 
 # COMMAND ----------
 
+# Write SNS-driven Auto Loader data into a dedicated Delta target table.
 bronzeDF.writeStream \
-                .format("delta") \
-                .option("checkpointLocation", cloud_storage_path+"/bronze/bronze_iot_sns_stream/checkpoint") \
-                .trigger(once=True) \
-                .option("mergeSchema", "true") \
-                .outputMode("append") \
-                .table("iot_autoloader_demo_sns") # table name
+    .format("delta") \
+    .option("checkpointLocation", cloud_storage_path + "/bronze/bronze_iot_sns_stream/checkpoint") \
+    .trigger(once=True) \
+    .option("mergeSchema", "true") \
+    .outputMode("append") \
+    .table("iot_autoloader_demo_sns")  # table name
 
 # COMMAND ----------
 
+# Inspect checkpoint state for the SNS-based Auto Loader pipeline.
 # MAGIC %sql
 # MAGIC SELECT * FROM cloud_files_state("${da.cloud_storage_path}/bronze/bronze_iot_sns_stream/checkpoint");
 
@@ -480,17 +551,20 @@ bronzeDF.writeStream \
 
 # COMMAND ----------
 
+# Show history for the SNS ingestion Delta table.
 # MAGIC %sql
 # MAGIC DESCRIBE HISTORY iot_autoloader_demo_sns 
 
 # COMMAND ----------
 
 # DBTITLE 1,Add More files
+# Move/add SNS demo files and persist the updated SNS file counter.
 file_counter_sns = move_file_sns(file_counter_sns)
 
 # COMMAND ----------
 
-display(dbutils.fs.ls(cloud_storage_path+"/ingest_sns"))
+# List SNS ingest folder contents to verify new files are present.
+display(dbutils.fs.ls(cloud_storage_path + "/ingest_sns"))
 
 # COMMAND ----------
 

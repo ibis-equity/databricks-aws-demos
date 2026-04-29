@@ -3,7 +3,8 @@
 
 -- COMMAND ----------
 
-create connection rds_mysql type mysql 
+-- Create a Unity Catalog connection object for the external RDS MySQL database.
+create connection rds_mysql type mysql
 options (
   host '${da.rds_endpoint}',
   port '3306',
@@ -14,15 +15,18 @@ options (
 
 -- COMMAND ----------
 
+-- List all configured external connections to verify creation succeeded.
 show connections;
 
 -- COMMAND ----------
 
-describe connection extended rds_mysql; 
+-- Show detailed connection metadata and options for troubleshooting.
+describe connection extended rds_mysql;
 
 -- COMMAND ----------
 
-create foreign catalog mysql_external using connection rds_mysql 
+-- Create a foreign catalog that maps MySQL objects through the named connection.
+create foreign catalog mysql_external using connection rds_mysql
 
 
 -- COMMAND ----------

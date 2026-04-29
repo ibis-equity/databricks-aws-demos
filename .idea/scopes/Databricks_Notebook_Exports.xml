@@ -1,0 +1,4 @@
+<component name="DependencyValidationManager">
+  <scope name="Databricks Notebook Exports" pattern="file[databricks-aws-demos]:01. Ingestion//*||file[databricks-aws-demos]:02. Processing//*||file[databricks-aws-demos]:03. Serving//*||file[databricks-aws-demos]:_resources//*" />
+</component>
+

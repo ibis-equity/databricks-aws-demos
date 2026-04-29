@@ -1,9 +1,12 @@
 # Databricks notebook source
 # DBTITLE 1,Create a DynamoDB Table using boto3
+# Import AWS SDK for Python to interact with DynamoDB services.
 import boto3
-# Create a boto3 client for DynamoDB
+# Initialize a DynamoDB client in the target AWS region.
 dynamodb = boto3.client('dynamodb',region_name='ap-southeast-2')
+# Define the DynamoDB table name used throughout this notebook.
 table_name = 'LookUpTable'
+# Create the DynamoDB table with composite primary key and provisioned throughput.
 table = dynamodb.create_table(
     TableName=table_name,
     KeySchema=[
@@ -36,8 +39,9 @@ table = dynamodb.create_table(
 # COMMAND ----------
 
 # DBTITLE 1,Insert record into Table
-# Put an item in the table
+# Reuse the target table name for item insertion.
 table_name = 'LookUpTable'
+# Insert a sample item into the lookup table.
 dynamodb.put_item(
     TableName=table_name,
     Item={
@@ -49,29 +53,32 @@ dynamodb.put_item(
 # COMMAND ----------
 
 # DBTITLE 1,Retrieve record from Table
-# Define the key of the item to retrieve
+# Define the composite key used to fetch a specific item.
 key = {'brand': {'S': 'BMW'},'model':{'S':'3 Series'}}
 
-# Get the item from the table
+# Retrieve the matching item from DynamoDB by primary key.
 response = dynamodb.get_item(TableName=table_name, Key=key)
 
-# Print the item
+# Print the raw DynamoDB item payload returned by the get call.
 print(response['Item'])
 
 
 # COMMAND ----------
 
 # DBTITLE 1,Retrieve record into Spark Dataframe
+# Extract the DynamoDB item dictionary from the API response.
 item = response['Item']
+# Convert DynamoDB typed attributes into a plain Python dictionary.
 item_dict = {k:v['S'] if 'S' in v else v['N'] for k,v in item.items()}
 
-# Create a DataFrame from the dictionary
+# Create a Spark DataFrame from the normalized item dictionary.
 df = spark.createDataFrame([item_dict])
 
-# Show the DataFrame
+# Display the DataFrame in the Databricks notebook output.
 df.display()
 
 # COMMAND ----------
 
 # DBTITLE 1,Clean Up
+# Delete the demo DynamoDB table to clean up created resources.
 response = dynamodb.delete_table(TableName='LookUpTable')

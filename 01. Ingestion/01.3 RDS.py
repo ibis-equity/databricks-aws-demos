@@ -9,10 +9,12 @@
 
 # COMMAND ----------
 
+# Create a notebook widget to optionally reset demo data before running setup.
 dbutils.widgets.dropdown("reset_all_data", "false", ["true", "false"], "Reset all data")
 
 # COMMAND ----------
 
+# Execute shared setup notebook and pass through the reset widget value.
 # MAGIC %run ../_resources/00-setup $reset_all_data=$reset_all_data
 
 # COMMAND ----------
@@ -40,19 +42,27 @@ dbutils.widgets.dropdown("reset_all_data", "false", ["true", "false"], "Reset al
 
 # COMMAND ----------
 
+# Read the RDS endpoint hostname from Spark configuration.
 jdbcHostname = spark.conf.get("da.rds_endpoint")
+# Set the source database name to use for JDBC operations.
 jdbcDatabase = 'demodb'
+# Define the MySQL port used by the RDS instance.
 jdbcPort = "3306"
+# Read the JDBC username from Spark configuration.
 username = spark.conf.get("da.rds_user")
+# Read the JDBC password from Spark configuration.
 password = spark.conf.get("da.rds_password")
 
+# Build the JDBC URL string required for Spark JDBC read/write APIs.
 jdbcUrl = f"jdbc:mysql://{jdbcHostname}:{jdbcPort}/{jdbcDatabase}"
 
+# Define JDBC connection properties passed to Spark JDBC methods.
 connectionProperties = {
   "user" : username,
   "password" : password,
   "ssl" : "true"   # SSL for secure connection
 }
+# Print the final JDBC URL for quick verification.
 print(jdbcUrl)
 
 # COMMAND ----------
@@ -76,7 +86,8 @@ print(jdbcUrl)
 
 # COMMAND ----------
 
-# MAGIC %sh 
+# Run a shell-level network connectivity check to the database host/port.
+# MAGIC %sh
 # MAGIC nc -vz "<database-host-url>" 3306
 
 # COMMAND ----------
@@ -89,7 +100,8 @@ print(jdbcUrl)
 # COMMAND ----------
 
 #create a dataframe to write to the Database
-df = spark.createDataFrame( [ ("Bilbo",     50), 
+# Create an in-memory sample DataFrame that will be written to RDS.
+df = spark.createDataFrame( [ ("Bilbo",     50),
                                   ("Gandalf", 1000), 
                                   ("Thorin",   195),  
                                   ("Balin",    178), 
@@ -106,6 +118,7 @@ df = spark.createDataFrame( [ ("Bilbo",     50),
 # COMMAND ----------
 
 # DBTITLE 0,Write Dataframe to RDS
+# Write the sample DataFrame to the RDS `people` table, replacing existing data.
 df.write.jdbc(url=jdbcUrl, table="people", mode="overwrite", properties=connectionProperties)
 
 # COMMAND ----------
@@ -119,19 +132,27 @@ df.write.jdbc(url=jdbcUrl, table="people", mode="overwrite", properties=connecti
 
 # DBTITLE 0,Read RDS Table
 # Full table read
+# Read the full `people` table from RDS into a Spark DataFrame.
 df = spark.read.jdbc(url=jdbcUrl, table="people", properties=connectionProperties)
 
+# Display the loaded RDS data in notebook output.
 df.display()
+# Print inferred schema of the loaded JDBC DataFrame.
 df.printSchema()
 
 # COMMAND ----------
 
 # Filtered read
+# Define the maximum number of rows to fetch in the filtered query.
 n = 5 # Number of rows to take
+# Build a JDBC subquery string for a limited ordered read.
 sql = "(SELECT * FROM people order by age LIMIT {0} ) AS tmp".format(int(n))
+# Read filtered rows from RDS using a SQL subquery as the source table.
 df = spark.read.jdbc(url=jdbcUrl, table=sql, properties=connectionProperties)
 
+# Display filtered rows returned by the JDBC subquery.
 df.display()
+# Print schema of the filtered result DataFrame.
 df.printSchema()
 
 # COMMAND ----------
@@ -144,7 +165,9 @@ df.printSchema()
 
 # COMMAND ----------
 
+# Set the destination Delta table name used for Spark-managed storage.
 target_table_name = "`people`"
+# Persist the DataFrame into a Delta table, replacing existing content.
 df.write.mode("overwrite").saveAsTable(target_table_name)
 
 # COMMAND ----------
@@ -157,11 +180,13 @@ df.write.mode("overwrite").saveAsTable(target_table_name)
 
 # COMMAND ----------
 
+# Query the Delta table with SQL to validate persisted results.
 # MAGIC %sql
 # MAGIC SELECT * FROM `people`
 
 # COMMAND ----------
 
+# Load the Delta table as a DataFrame and display it in the notebook.
 display(spark.table(target_table_name))
 
 # COMMAND ----------

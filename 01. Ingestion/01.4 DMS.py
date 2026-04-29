@@ -14,38 +14,52 @@
 
 # COMMAND ----------
 
+# Create a notebook widget to control whether demo data is reset.
 dbutils.widgets.dropdown("reset_all_data", "false", ["true", "false"], "Reset all data")
 
 
 # COMMAND ----------
 
+# Run shared lab setup notebook and pass through the reset widget value.
 # MAGIC %run ../_resources/00-setup $reset_all_data=$reset_all_data
 
 # COMMAND ----------
 
+# Run helper notebook that prepares DMS/CDC-related demo artifacts.
 # MAGIC %run ../_resources/02-dms-cdc-data
 
 # COMMAND ----------
 
+# Read RDS endpoint hostname from Spark configuration.
 database_host = spark.conf.get("da.rds_endpoint")
+# Define the source MySQL database name.
 database_name = 'demodb'
+# Define the source MySQL port.
 database_port = "3306"
+# Read database username from Spark configuration.
 username = spark.conf.get("da.rds_user")
+# Read database password from Spark configuration.
 password = spark.conf.get("da.rds_password")
 
+# Build the JDBC URL used for Spark JDBC reads.
 jdbcUrl = f"jdbc:mysql://{database_host}:{database_port}/{database_name}"
+# Define JDBC connection properties passed to Spark read/write methods.
 connectionProperties = {
   "user" : username,
   "password" : password,
   "ssl" : "true"   # SSL for secure connection
 }
+# Print JDBC URL for quick verification during lab execution.
 print(jdbcUrl)
 
 # COMMAND ----------
 
-remote_table = spark.read.jdbc(url=jdbcUrl, table="customers", properties=connectionProperties) 
+# Read the remote `customers` table from RDS through JDBC.
+remote_table = spark.read.jdbc(url=jdbcUrl, table="customers", properties=connectionProperties)
 
+# Display imported RDS records in the notebook output.
 remote_table.display()
+# Print schema of the imported RDS table.
 remote_table.printSchema()
 
 # COMMAND ----------
@@ -75,6 +89,7 @@ remote_table.printSchema()
 # COMMAND ----------
 
 # DBTITLE 0,Full Load
+# Preview raw full-load CSV file created by DMS before ingestion.
 # MAGIC %sql
 # MAGIC --Check the file before loading
 # MAGIC SELECT * FROM csv.`${da.cloud_storage_path}/dms-output/demodb/customers/LOAD00000001.csv.gz`
@@ -82,9 +97,11 @@ remote_table.printSchema()
 # COMMAND ----------
 
 # Read CSV files from S3 into a DataFrame
+# Load DMS full-load CSV output from cloud storage into a DataFrame.
 df = spark.read.format('csv').options(header='true', inferSchema='true').load(cloud_storage_path+"/dms-output/demodb/customers/LOAD00000001.csv.gz")
 
 # Write the DataFrame into a Delta table
+# Persist the full-load DataFrame to a managed Delta table.
 df.write.format("delta").saveAsTable("customers")
 
 # COMMAND ----------
@@ -98,7 +115,8 @@ df.write.format("delta").saveAsTable("customers")
 
 # COMMAND ----------
 
-df_rds = spark.read.jdbc(url=jdbcUrl, table="customers", properties=connectionProperties) 
+# Read the authoritative RDS `customers` table for consistency validation.
+df_rds = spark.read.jdbc(url=jdbcUrl, table="customers", properties=connectionProperties)
 
 # COMMAND ----------
 
@@ -108,6 +126,7 @@ df_rds = spark.read.jdbc(url=jdbcUrl, table="customers", properties=connectionPr
 
 # COMMAND ----------
 
+# Assert row counts match between Delta and RDS as a basic consistency check.
 assert df.count() == df_rds.count(), "Data is not consistent between RDS and Delta table"
 
 # COMMAND ----------
@@ -117,6 +136,7 @@ assert df.count() == df_rds.count(), "Data is not consistent between RDS and Del
 
 # COMMAND ----------
 
+# Execute generator notebook to create fresh CDC events in the source system.
 # MAGIC %run ../_resources/02-dms-cdc-data-generator
 
 # COMMAND ----------
@@ -127,6 +147,7 @@ assert df.count() == df_rds.count(), "Data is not consistent between RDS and Del
 # COMMAND ----------
 
 # DBTITLE 0,CDC Data
+# Inspect landed CDC CSV output that will be used by downstream labs.
 # MAGIC %sql
 # MAGIC SELECT * FROM csv.`${da.cloud_storage_path}/dms-cdc-output/demodb/customers/`
 

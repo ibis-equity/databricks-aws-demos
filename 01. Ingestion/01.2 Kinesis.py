@@ -6,6 +6,30 @@
 
 # MAGIC %run ../_resources/01-setup
 
+# Databricks `%run` injects these names at runtime; alias them for IDE/static analysis.
+# Import typing support used by the fallback helper function signature.
+from typing import Any
+
+# Resolve the data generator function injected by the setup notebook.
+generate = globals().get("generate")
+# Resolve the Kinesis stream name injected by the setup notebook.
+kinesisStreamName = globals().get("kinesisStreamName")
+# Resolve the AWS region for the Kinesis stream.
+kinesisRegion = globals().get("kinesisRegion")
+# Resolve the boto3 client injected by setup for AWS API operations.
+client = globals().get("client")
+# Resolve cloud storage path used for streaming checkpoints.
+cloud_storage_path = globals().get("cloud_storage_path")
+# Resolve SparkSession injected by Databricks runtime.
+spark = globals().get("spark")
+
+# Guard against missing setup execution by providing a clear fallback.
+if generate is None:
+    # Provide a stub that fails fast when the setup notebook was not executed.
+    def generate(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore[no-redef]
+        # Raise a descriptive runtime error to guide notebook users.
+        raise RuntimeError("`generate` is expected from `%run ../_resources/01-setup`.")
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -15,8 +39,8 @@
 
 # COMMAND ----------
 
-#Generate some data into the Stream. 
-generate(kinesisStreamName,client)
+# Push sample events into Kinesis so downstream streaming reads have input data.
+generate(kinesisStreamName, client)
 
 # COMMAND ----------
 
@@ -26,6 +50,7 @@ generate(kinesisStreamName,client)
 
 # COMMAND ----------
 
+# Create a structured streaming DataFrame that reads records from Kinesis.
 kinesisData = (spark.readStream
                   .format("kinesis")
                   .option("streamName", kinesisStreamName)
@@ -37,8 +62,10 @@ kinesisData = (spark.readStream
 # COMMAND ----------
 
 # DBTITLE 1,Define a Schema to use
+# Import PySpark SQL types used to define the JSON payload schema.
 from pyspark.sql.types import *
 
+# Define the expected JSON schema for stock ticker events.
 pythonSchema = StructType() \
           .add("event_time", TimestampType()) \
           .add("ticker", StringType()) \
@@ -57,8 +84,10 @@ pythonSchema = StructType() \
 
 # COMMAND ----------
 
-from pyspark.sql.functions import col, from_json
+# Import JSON parsing helper to deserialize string payloads into structured columns.
+from pyspark.sql.functions import from_json
 
+# Cast binary Kinesis data to string and parse it into typed columns.
 kinesisDF = kinesisData.selectExpr("cast (data as STRING) jsonData") \
             .select(from_json("jsonData", pythonSchema).alias("payload")) \
             .select("payload.*")
@@ -74,9 +103,10 @@ kinesisDF = kinesisData.selectExpr("cast (data as STRING) jsonData") \
 
 # COMMAND ----------
 
+# Write the parsed stream to a Delta table with a persistent checkpoint location.
 kinesisDF.writeStream \
   .format("delta") \
-  .option("checkpointLocation", cloud_storage_path+"/delta/checkpoints") \
+  .option("checkpointLocation", cloud_storage_path + "/delta/checkpoints") \
   .table("stock_ticker")
 
 
@@ -87,9 +117,8 @@ kinesisDF.writeStream \
 
 # COMMAND ----------
 
-#Add some more data into the Stream. 
-generate(kinesisStreamName,client)
-# Now check 
+# Add another batch of records to demonstrate incremental streaming ingestion.
+generate(kinesisStreamName, client)
 
 # COMMAND ----------
 
@@ -140,10 +169,17 @@ generate(kinesisStreamName,client)
 # COMMAND ----------
 
 # DBTITLE 1,Clean up resources
+# Delete the Kinesis stream at the end of the lab to avoid leftover resources.
 response = client.delete_stream(
     StreamName=kinesisStreamName
 )
 
 # COMMAND ----------
+
+
+
+
+
+
 
 
